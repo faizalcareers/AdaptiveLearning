@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI-Powered Adaptive Learning System</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --secondary-color: #FF9800;
+            --success-color: #4CAF50;
+            --warning-color: #f44336;
+            --background-color: #f5f5f5;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--background-color);
+        }
+        
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .student-info {
+            background: var(--primary-color);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .metric-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            background: #e9ecef;
+            transform: scale(1.02);
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin: 10px 0;
+        }
+
+        .velocity-unit {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .prediction-meter {
+            width: 100%;
+            height: 20px;
+            background: #ddd;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .prediction-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success-color), var(--secondary-color));
+            transition: width 0.3s ease;
+        }
+        
+        .topic-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .topic-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .topic-info {
+            flex-grow: 1;
+        }
+        
+        .topic-difficulty {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            color: white;
+            background: var(--primary-color);
+            display: inline-block;
+            margin-top: 5px;
+        }
+        
+        .readiness-indicator {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        
+        .readiness-indicator:hover {
+            transform: scale(1.1);
+        }
+
+        .activity-feed {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary-color) #ddd;
+        }
+
+        .activity-item {
+            padding: 12px;
+            border-left: 3px solid var(--primary-color);
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 0 5px 5px 0;
+            transition: all 0.2s ease;
+        }
+
+        .activity-item:hover {
+            transform: translateX(5px);
+            background: #e9ecef;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #ddd;
+            margin-top: 5px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            transition: width 0.3s ease;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="main-content">
+            <div class="student-info">
+                <h1 id="student-name">Loading...</h1>
+                <p id="student-grade">Grade: --</p>
+            </div>
+
+            <div class="card">
+                <h2>AI Learning Insights</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <h3>Success Prediction</h3>
+                        <div class="prediction-meter">
+                            <div class="prediction-fill" id="prediction-bar"></div>
+                        </div>
+                        <div class="metric-value" id="success-prediction">--%</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Knowledge Mastery</h3>
+                        <div class="metric-value" id="knowledge-mastery">--%</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Learning Velocity</h3>
+                        <div class="metric-value" id="learning-velocity">--</div>
+                        <div class="velocity-unit">points/hour</div>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="knowledgeChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Recommended Learning Path</h2>
+                <div id="recommended-topics"></div>
+            </div>
+            
+            <div class="card">
+                <h2>Subject Progress</h2>
+                <div class="metrics-grid">
+                    <div class="chart-container">
+                        <canvas id="mathChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="scienceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card">
+                <h2>Recent Activities</h2>
+                <div class="activity-feed" id="activity-feed"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let studentId = 'S001';
+        let knowledgeChart, mathChart, scienceChart;
+        
+        function initializeCharts() {
+            const chartOptions = {
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 1,
+                        ticks: {
+                            callback: value => `${(value * 100).toFixed(0)}%`
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            };
+
+            knowledgeChart = new Chart(
+                document.getElementById('knowledgeChart').getContext('2d'),
+                {
+                    type: 'radar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Knowledge State',
+                            backgroundColor: 'rgba(33, 150, 243, 0.2)',
+                            borderColor: '#2196F3',
+                            data: []
+                        }]
+                    },
+                    options: chartOptions
+                }
+            );
+
+            const lineChartOptions = {
+                ...chartOptions,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                }
+            };
+
+            mathChart = new Chart(
+                document.getElementById('mathChart').getContext('2d'),
+                {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Math Progress',
+                            borderColor: '#4CAF50',
+                            tension: 0.4,
+                            data: []
+                        }]
+                    },
+                    options: lineChartOptions
+                }
+            );
+
+            scienceChart = new Chart(
+                document.getElementById('scienceChart').getContext('2d'),
+                {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Science Progress',
+                            borderColor: '#FF9800',
+                            tension: 0.4,
+                            data: []
+                        }]
+                    },
+                    options: lineChartOptions
+                }
+            );
+        }
+
+        function updateDashboard(data) {
+            document.getElementById('student-name').textContent = data.student_info.name;
+            document.getElementById('student-grade').textContent = `Grade ${data.student_info.grade}`;
+            
+            const prediction = data.progress.performance_prediction * 100;
+            document.getElementById('prediction-bar').style.width = `${prediction}%`;
+            document.getElementById('success-prediction').textContent = `${prediction.toFixed(1)}%`;
+            
+            const knowledgeState = data.progress.knowledge_state;
+            knowledgeChart.data.labels = Object.keys(knowledgeState);
+            knowledgeChart.data.datasets[0].data = Object.values(knowledgeState);
+            knowledgeChart.update();
+            
+            const avgMastery = Object.values(knowledgeState).reduce((a, b) => a + b, 0) / 
+                             Object.values(knowledgeState).length * 100;
+            document.getElementById('knowledge-mastery').textContent = 
+                `${avgMastery.toFixed(1)}%`;
+
+            document.getElementById('learning-velocity').textContent = 
+                data.progress.learning_velocity.toFixed(1);
+            
+            document.getElementById('recommended-topics').innerHTML = 
+                data.progress.recommended_topics
+                    .map(topic => `
+                        <div class="topic-card">
+                            <div class="topic-info">
+                                <h3>${topic.topic}</h3>
+                                <p>Subject: ${topic.subject}</p>
+                                <span class="topic-difficulty">
+                                    Difficulty: ${(topic.difficulty * 100).toFixed(0)}%
+                                </span>
+                            </div>
+                            <div class="readiness-indicator" style="
+                                background-color: ${getReadinessColor(topic.readiness)}">
+                                ${(topic.readiness * 100).toFixed(0)}%
+                            </div>
+                        </div>
+                    `).join('');
+            
+            updateSubjectCharts(data.progress.subjects);
+        }
+
+        function updateSubjectCharts(subjects) {
+            if (subjects.math) {
+                updateSubjectChart(mathChart, subjects.math.scores);
+            }
+            if (subjects.science) {
+                updateSubjectChart(scienceChart, subjects.science.scores);
+            }
+        }
+
+        function updateSubjectChart(chart, scores) {
+            chart.data.labels = Array.from(
+                {length: scores.length}, 
+                (_, i) => `Activity ${i + 1}`
+            );
+            chart.data.datasets[0].data = scores;
+            chart.update();
+        }
+
+        function addActivityToFeed(subject, topic, score) {
+            const activityFeed = document.getElementById('activity-feed');
+            const activityItem = document.createElement('div');
+            activityItem.className = 'activity-item';
+            activityItem.innerHTML = `
+                <div>
+                    <strong>${subject.charAt(0).toUpperCase() + subject.slice(1)}</strong> - ${topic}
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${score}%"></div>
+                    </div>
+                    <small>Score: ${score}%</small>
+                </div>
+            `;
+            activityFeed.insertBefore(activityItem, activityFeed.firstChild);
+
+            if (activityFeed.children.length > 10) {
+                activityFeed.removeChild(activityFeed.lastChild);
+            }
+        }
+
+        function getReadinessColor(readiness) {
+            if (readiness >= 0.8) return '#4CAF50';
+            if (readiness >= 0.6) return '#FF9800';
+            return '#f44336';
+        }
+
+        function simulateActivity() {
+            const subjects = ['math', 'science'];
+            const topics = {
+                math: ['algebra', 'geometry', 'calculus', 'statistics'],
+                science: ['physics', 'chemistry', 'biology', 'astronomy']
+            };
+            
+            const subject = subjects[Math.floor(Math.random() * subjects.length)];
+            const topic = topics[subject][Math.floor(Math.random() * topics[subject].length)];
+            const score = Math.floor(Math.random() * 30) + 70;
+            const timeSpent = Math.floor(Math.random() * 1800) + 900;
+            
+            fetch('/api/update_progress', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    student_id: studentId,
+                    subject: subject,
+                    topic: topic,
+                    score: score,
+                    time_spent: timeSpent
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.error) {
+                    updateDashboard(data);
+                    addActivityToFeed(subject, topic, score);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeCharts();
+            fetch(`/api/student/${studentId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.error) {
+                        updateDashboard(data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching student data:', error);
+                    document.getElementById('student-name').textContent = 'Error loading data';
+                });
+                
+            setInterval(simulateActivity, 5000);
+        });
+
+        // Error handling utilities
+        function handleAPIError(error) {
+            console.error('API Error:', error);
+            const errorMessage = document.createElement('div');
+            errorMessage.className = 'error-message';
+            errorMessage.textContent = 'An error occurred. Please try again later.';
+            document.body.insertBefore(errorMessage, document.body.firstChild);
+            setTimeout(() => errorMessage.remove(), 3000);
+        }
+
+        // Chart utilities
+        function resetCharts() {
+            knowledgeChart.data.labels = [];
+            knowledgeChart.data.datasets[0].data = [];
+            knowledgeChart.update();
+            
+            mathChart.data.labels = [];
+            mathChart.data.datasets[0].data = [];
+            mathChart.update();
+            
+            scienceChart.data.labels = [];
+            scienceChart.data.datasets[0].data = [];
+            scienceChart.update();
+        }
+
+        // Student selector functionality
+        function changeStudent(newStudentId) {
+            studentId = newStudentId;
+            resetCharts();
+            fetch(`/api/student/${studentId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.error) {
+                        updateDashboard(data);
+                    }
+                })
+                .catch(handleAPIError);
+        }
+
+        // Add window resize handler for responsive charts
+        window.addEventListener('resize', () => {
+            if (knowledgeChart) knowledgeChart.resize();
+            if (mathChart) mathChart.resize();
+            if (scienceChart) scienceChart.resize();
+        });
+    </script>
+</body>
+</html>
