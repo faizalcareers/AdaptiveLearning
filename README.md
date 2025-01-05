@@ -22,7 +22,7 @@ This project implements an intelligent learning platform that adapts to individu
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/adaptive-learning-system.git
+git clone https://github.com/faizalcareers/AdaptiveLearning.git
 ```
 
 2. Install dependencies
