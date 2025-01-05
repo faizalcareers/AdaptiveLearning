@@ -108,51 +108,68 @@
         }
         
         .topic-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
         
-        .topic-card:hover {
-            transform: translateX(5px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
+.topic-card:hover {
+    transform: translateX(5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
         
         .topic-info {
             flex-grow: 1;
         }
         
+        .topic-info h3 {
+             margin: 0 0 10px 0;
+             color: #333;
+        }
+
+        .topic-details {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
         .topic-difficulty {
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 0.8em;
-            color: white;
-            background: var(--primary-color);
-            display: inline-block;
-            margin-top: 5px;
-        }
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.9em;
+    background: #f0f0f0;
+    color: #666;
+}
+
+          .prerequisites {
+                font-size: 0.9em;
+                color: #666;
+            }
         
-        .readiness-indicator {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            transition: transform 0.2s;
-        }
+            .readiness-indicator {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    margin-left: 20px;
+    transition: transform 0.2s;
+}
         
-        .readiness-indicator:hover {
-            transform: scale(1.1);
-        }
+.readiness-indicator:hover {
+    transform: scale(1.1);
+}
 
         .activity-feed {
             max-height: 400px;
@@ -190,6 +207,24 @@
             transition: width 0.3s ease;
         }
 
+        .alert {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+        }
+
+        .recommendation {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
         @media (max-width: 768px) {
             .dashboard-container {
                 grid-template-columns: 1fr;
@@ -199,9 +234,32 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        .student-selector {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        select {
+            width: 200px;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
+    <div class="student-selector">
+        <select id="studentSelect" onchange="changeStudent(this.value)">
+            <option value="S001">John Doe</option>
+            <option value="S002">Jane Smith</option>
+            <option value="S003">Mike Johnson</option>
+        </select>
+    </div>
+
     <div class="dashboard-container">
         <div class="main-content">
             <div class="student-info">
@@ -234,6 +292,12 @@
                     <canvas id="knowledgeChart"></canvas>
                 </div>
             </div>
+
+            <div class="card">
+                <h2>Status Updates</h2>
+                <div id="alerts-container"></div>
+                <div id="recommendations-container"></div>
+            </div>
             
             <div class="card">
                 <h2>Recommended Learning Path</h2>
@@ -257,6 +321,11 @@
             <div class="card">
                 <h2>Recent Activities</h2>
                 <div class="activity-feed" id="activity-feed"></div>
+            </div>
+
+            <div class="card">
+                <h2>Analytics</h2>
+                <div id="analytics-container"></div>
             </div>
         </div>
     </div>
@@ -368,26 +437,46 @@
             document.getElementById('learning-velocity').textContent = 
                 data.progress.learning_velocity.toFixed(1);
             
-            document.getElementById('recommended-topics').innerHTML = 
-                data.progress.recommended_topics
-                    .map(topic => `
-                        <div class="topic-card">
-                            <div class="topic-info">
-                                <h3>${topic.topic}</h3>
-                                <p>Subject: ${topic.subject}</p>
-                                <span class="topic-difficulty">
-                                    Difficulty: ${(topic.difficulty * 100).toFixed(0)}%
-                                </span>
-                            </div>
-                            <div class="readiness-indicator" style="
-                                background-color: ${getReadinessColor(topic.readiness)}">
-                                ${(topic.readiness * 100).toFixed(0)}%
-                            </div>
-                        </div>
-                    `).join('');
-            
+            updateTopicRecommendations(data.progress.recommended_topics);
             updateSubjectCharts(data.progress.subjects);
+            fetchAndUpdateStatus();
+            fetchAndUpdateAnalytics();
         }
+
+
+        function updateTopicRecommendations(topics) {
+    const container = document.getElementById('recommended-topics');
+    
+    if (!topics || topics.length === 0) {
+        container.innerHTML = '<p>No topics recommended at this time.</p>';
+        return;
+    }
+
+    container.innerHTML = topics.map(topic => `
+        <div class="topic-card">
+            <div class="topic-info">
+                <h3>${topic.topic.charAt(0).toUpperCase() + topic.topic.slice(1)}</h3>
+                <p>Subject: ${topic.subject.charAt(0).toUpperCase() + topic.subject.slice(1)}</p>
+                <div class="topic-details">
+                    <span class="topic-difficulty">
+                        Difficulty: ${(topic.difficulty * 100).toFixed(0)}%
+                    </span>
+                    ${topic.prerequisites && topic.prerequisites.length > 0 ? `
+                        <div class="prerequisites">
+                            Prerequisites: ${topic.prerequisites.join(', ')}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="readiness-indicator" style="
+                background-color: ${getReadinessColor(topic.readiness)}">
+                ${(topic.readiness * 100).toFixed(0)}%
+            </div>
+        </div>
+    `).join('');
+}
+
+
 
         function updateSubjectCharts(subjects) {
             if (subjects.math) {
@@ -424,112 +513,158 @@
 
             if (activityFeed.children.length > 10) {
                 activityFeed.removeChild(activityFeed.lastChild);
-            }
-        }
+           }
+       }
 
-        function getReadinessColor(readiness) {
-            if (readiness >= 0.8) return '#4CAF50';
-            if (readiness >= 0.6) return '#FF9800';
-            return '#f44336';
-        }
+       function fetchAndUpdateStatus() {
+           fetch(`/api/status/${studentId}`)
+               .then(response => response.json())
+               .then(data => {
+                   updateStatusDisplay(data);
+               })
+               .catch(handleAPIError);
+       }
 
-        function simulateActivity() {
-            const subjects = ['math', 'science'];
-            const topics = {
-                math: ['algebra', 'geometry', 'calculus', 'statistics'],
-                science: ['physics', 'chemistry', 'biology', 'astronomy']
-            };
-            
-            const subject = subjects[Math.floor(Math.random() * subjects.length)];
-            const topic = topics[subject][Math.floor(Math.random() * topics[subject].length)];
-            const score = Math.floor(Math.random() * 30) + 70;
-            const timeSpent = Math.floor(Math.random() * 1800) + 900;
-            
-            fetch('/api/update_progress', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    student_id: studentId,
-                    subject: subject,
-                    topic: topic,
-                    score: score,
-                    time_spent: timeSpent
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (!data.error) {
-                    updateDashboard(data);
-                    addActivityToFeed(subject, topic, score);
-                }
-            })
-            .catch(error => console.error('Error:', error));
-        }
+       function updateStatusDisplay(status) {
+           const alertsContainer = document.getElementById('alerts-container');
+           const recommendationsContainer = document.getElementById('recommendations-container');
+           
+           alertsContainer.innerHTML = status.alerts.map(alert => `
+               <div class="alert">
+                   <strong>${alert.type}:</strong> ${alert.message}
+               </div>
+           `).join('');
+           
+           recommendationsContainer.innerHTML = status.recommendations.map(rec => `
+               <div class="recommendation">
+                   <h4>${rec.subject} Improvement Plan</h4>
+                   <p>Topics to review: ${rec.weak_topics.join(', ')}</p>
+                   <p>Estimated time: ${(rec.estimated_improvement_time / 3600).toFixed(1)} hours</p>
+               </div>
+           `).join('');
+       }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeCharts();
-            fetch(`/api/student/${studentId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (!data.error) {
-                        updateDashboard(data);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching student data:', error);
-                    document.getElementById('student-name').textContent = 'Error loading data';
-                });
-                
-            setInterval(simulateActivity, 5000);
-        });
+       function fetchAndUpdateAnalytics() {
+           fetch(`/api/analytics/${studentId}`)
+               .then(response => response.json())
+               .then(data => {
+                   updateAnalyticsDisplay(data);
+               })
+               .catch(handleAPIError);
+       }
 
-        // Error handling utilities
-        function handleAPIError(error) {
-            console.error('API Error:', error);
-            const errorMessage = document.createElement('div');
-            errorMessage.className = 'error-message';
-            errorMessage.textContent = 'An error occurred. Please try again later.';
-            document.body.insertBefore(errorMessage, document.body.firstChild);
-            setTimeout(() => errorMessage.remove(), 3000);
-        }
+       function updateAnalyticsDisplay(analytics) {
+           const container = document.getElementById('analytics-container');
+           container.innerHTML = `
+               <div class="analytics-content">
+                   ${Object.entries(analytics.performance_trends).map(([subject, trend]) => `
+                       <div class="trend-item">
+                           <h4>${subject}</h4>
+                           <p>Improvement: ${(trend.improvement_rate * 100).toFixed(1)}%</p>
+                           <p>Recent Average: ${trend.recent_avg.toFixed(1)}</p>
+                       </div>
+                   `).join('')}
+               </div>
+           `;
+       }
 
-        // Chart utilities
-        function resetCharts() {
-            knowledgeChart.data.labels = [];
-            knowledgeChart.data.datasets[0].data = [];
-            knowledgeChart.update();
-            
-            mathChart.data.labels = [];
-            mathChart.data.datasets[0].data = [];
-            mathChart.update();
-            
-            scienceChart.data.labels = [];
-            scienceChart.data.datasets[0].data = [];
-            scienceChart.update();
-        }
+       function getReadinessColor(readiness) {
+                        if (readiness >= 0.8) return '#4CAF50';  // Green
+                        if (readiness >= 0.6) return '#FF9800';  // Orange
+                        if (readiness >= 0.4) return '#FFC107';  // Yellow
+                        return '#f44336';  // Red
+       }
 
-        // Student selector functionality
-        function changeStudent(newStudentId) {
-            studentId = newStudentId;
-            resetCharts();
-            fetch(`/api/student/${studentId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (!data.error) {
-                        updateDashboard(data);
-                    }
-                })
-                .catch(handleAPIError);
-        }
+       function handleAPIError(error) {
+           console.error('API Error:', error);
+           const errorMessage = document.createElement('div');
+           errorMessage.className = 'error-message';
+           errorMessage.textContent = 'An error occurred. Please try again later.';
+           document.body.insertBefore(errorMessage, document.body.firstChild);
+           setTimeout(() => errorMessage.remove(), 3000);
+       }
 
-        // Add window resize handler for responsive charts
-        window.addEventListener('resize', () => {
-            if (knowledgeChart) knowledgeChart.resize();
-            if (mathChart) mathChart.resize();
-            if (scienceChart) scienceChart.resize();
-        });
-    </script>
+       function simulateActivity() {
+           const subjects = ['math', 'science'];
+           const topics = {
+               math: ['algebra', 'geometry', 'calculus'],
+               science: ['physics', 'chemistry', 'biology']
+           };
+           
+           const subject = subjects[Math.floor(Math.random() * subjects.length)];
+           const topic = topics[subject][Math.floor(Math.random() * topics[subject].length)];
+           const score = Math.floor(Math.random() * 30) + 70;
+           const timeSpent = Math.floor(Math.random() * 1800) + 900;
+           
+           fetch('/api/update_progress', {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json',
+               },
+               body: JSON.stringify({
+                   student_id: studentId,
+                   subject: subject,
+                   topic: topic,
+                   score: score,
+                   time_spent: timeSpent
+               })
+           })
+           .then(response => response.json())
+           .then(data => {
+               if (!data.error) {
+                   updateDashboard(data.student_data);
+                   addActivityToFeed(subject, topic, score);
+               }
+           })
+           .catch(handleAPIError);
+       }
+
+       function changeStudent(newStudentId) {
+           studentId = newStudentId;
+           resetCharts();
+           fetch(`/api/student/${studentId}`)
+               .then(response => response.json())
+               .then(data => {
+                   if (!data.error) {
+                       updateDashboard(data);
+                   }
+               })
+               .catch(handleAPIError);
+       }
+
+       function resetCharts() {
+           knowledgeChart.data.labels = [];
+           knowledgeChart.data.datasets[0].data = [];
+           knowledgeChart.update();
+           
+           mathChart.data.labels = [];
+           mathChart.data.datasets[0].data = [];
+           mathChart.update();
+           
+           scienceChart.data.labels = [];
+           scienceChart.data.datasets[0].data = [];
+           scienceChart.update();
+       }
+
+       document.addEventListener('DOMContentLoaded', () => {
+           initializeCharts();
+           fetch(`/api/student/${studentId}`)
+               .then(response => response.json())
+               .then(data => {
+                   if (!data.error) {
+                       updateDashboard(data);
+                   }
+               })
+               .catch(handleAPIError);
+               
+           setInterval(simulateActivity, 30000);
+       });
+
+       window.addEventListener('resize', () => {
+           if (knowledgeChart) knowledgeChart.resize();
+           if (mathChart) mathChart.resize();
+           if (scienceChart) scienceChart.resize();
+       });
+   </script>
 </body>
 </html>

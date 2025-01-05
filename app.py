@@ -7,7 +7,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM
 from collections import defaultdict
 import time
-import tensorflow as tf
+from scipy.stats import percentileofscore
 
 app = Flask(__name__)
 
@@ -18,6 +18,31 @@ class AIModel:
         self.scaler = StandardScaler()
         self._train_models()
         
+    def _create_lstm_predictor(self):
+       from tensorflow.keras.layers import Input
+       from tensorflow.keras.models import Model
+
+       inputs = Input(shape=(10, 5))
+       x = LSTM(64, return_sequences=True)(inputs)
+       x = Dropout(0.2)(x)
+       x = LSTM(32)(x)
+       x = Dense(16, activation='relu')(x)
+       x = Dropout(0.2)(x)
+       outputs = Dense(1, activation='sigmoid')(x)
+    
+       model = Model(inputs=inputs, outputs=outputs)
+       model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+       return model
+
+
+    def _create_path_recommender(self):
+        return RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
+    
+    def _train_models(self):
+        X_lstm, y_lstm, X_rf, y_rf = self._generate_training_data()
+        self.performance_predictor.fit(X_lstm, y_lstm, epochs=10, batch_size=32, verbose=0)
+        self.path_recommender.fit(X_rf, y_rf)
+
     def _generate_training_data(self):
         n_students = 100
         n_timesteps = 10
@@ -31,92 +56,259 @@ class AIModel:
         for _ in range(n_students):
             student_sequence = []
             for t in range(n_timesteps):
-                score = np.random.normal(75, 15)
+                base_score = np.random.normal(75, 15)
+                improvement = t * 2
+                score = min(max(base_score + improvement, 0), 100)
+                
                 time_spent = np.random.normal(45, 15)
-                difficulty = np.random.uniform(0.3, 0.9)
-                prior_knowledge = np.random.uniform(0, 1)
-                attempts = np.random.randint(1, 4)
+                knowledge = min(0.1 * t + np.random.normal(0.5, 0.1), 1)
+                velocity = score / (time_spent / 60)
+                progress = t / n_timesteps
                 
                 student_sequence.append([
-                    score/100, time_spent/60, difficulty,
-                    prior_knowledge, attempts/3
+                    score/100,
+                    time_spent/60,
+                    knowledge,
+                    velocity/100,
+                    progress
                 ])
             
-            final_performance = np.random.uniform(0, 1)
+            final_performance = np.mean([seq[0] for seq in student_sequence[-3:]])
             X_lstm.append(student_sequence)
             y_lstm.append(final_performance)
+        
+        topics = ['algebra', 'geometry', 'calculus', 'physics', 'chemistry']
+        difficulties = [0.7, 0.6, 0.9, 0.8, 0.7]
+        
+        for _ in range(n_students * len(topics)):
+            knowledge = np.random.uniform(0, 1)
+            topic_idx = np.random.randint(0, len(topics))
+            difficulty = difficulties[topic_idx]
+            prerequisites_met = np.random.uniform(0, 1)
+            past_performance = np.random.normal(0.75, 0.15)
+            study_time = np.random.uniform(0.5, 2.0)
             
-            for topic in ['algebra', 'geometry', 'calculus', 'physics']:
-                features = [
-                    np.random.uniform(0, 1),  # knowledge_level
-                    np.random.uniform(0.3, 0.9),  # topic_difficulty
-                    np.random.uniform(0, 1),  # prerequisites_met
-                    np.random.normal(0.75, 0.15),  # past_performance
-                    np.random.uniform(0, 1)  # time_available
-                ]
-                
-                success = 1 if (features[0] + features[2] > features[1] * 1.5 
-                              and features[3] > 0.6) else 0
-                
-                X_rf.append(features)
-                y_rf.append(success)
+            success = int(
+                knowledge > difficulty - 0.2 and
+                prerequisites_met > 0.7 and
+                past_performance > 0.6 and
+                study_time > 0.8
+            )
+            
+            X_rf.append([
+                knowledge,
+                difficulty,
+                prerequisites_met,
+                past_performance,
+                study_time
+            ])
+            y_rf.append(success)
         
         return np.array(X_lstm), np.array(y_lstm), np.array(X_rf), np.array(y_rf)
 
-    def _create_lstm_predictor(self):
-        model = Sequential([
-            LSTM(64, input_shape=(10, 5), return_sequences=True),
-            Dropout(0.2),
-            LSTM(32),
-            Dense(16, activation='relu'),
-            Dropout(0.2),
-            Dense(1, activation='sigmoid')
-        ])
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        return model
-    
-    def _create_path_recommender(self):
-        return RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-    
-    def _train_models(self):
-        X_lstm, y_lstm, X_rf, y_rf = self._generate_training_data()
-        self.performance_predictor.fit(X_lstm, y_lstm, epochs=10, batch_size=32, verbose=0)
-        self.path_recommender.fit(X_rf, y_rf)
-    
-    def predict_performance(self, student_data):
-        sequence = self._prepare_sequence_data(student_data)
-        return float(self.performance_predictor.predict(np.array([sequence]))[0])
-    
-    def _prepare_sequence_data(self, student_data):
-        sequence = []
-        for subject in student_data['subjects'].values():
-            scores = subject.get('scores', [])
-            times = subject.get('time_spent', [])
-            
-            if scores and times:
-                recent_scores = scores[-10:]
-                avg_time = times / max(len(scores), 1)
-                sequence.append([
-                    np.mean(recent_scores)/100,
-                    avg_time/3600,
-                    0.7,  # difficulty
-                    0.5,  # knowledge
-                    1    # attempts
-                ])
+
+    #Training LSTM with actual student data ( Not being used here)
+    def train_with_student_data(self, student):
+        # Prepare sequence data
+        X = []
+        y = []
         
-        while len(sequence) < 10:
-            sequence.append([0, 0, 0, 0, 0])
+        for subject, data in student.subjects.items():
+            scores = data['scores']
+            times = data['time_spent']
+            knowledge_states = list(student.knowledge_state.values())
             
-        return sequence
+            # Create sequences of 10 timesteps
+            for i in range(len(scores) - 10):
+                sequence = []
+                for j in range(10):
+                    sequence.append([
+                        scores[i+j]/100,  # Normalized score
+                        times[i+j]/3600,  # Time in hours
+                        knowledge_states[i+j],  # Knowledge state
+                        data['recent_velocity'][i+j],  # Learning velocity
+                        len(data['topics_completed'])/len(self.topics[subject])  # Progress
+                    ])
+                
+                # Target is the next score
+                target = scores[i+10]/100
+                
+                X.append(sequence)
+                y.append(target)
+        
+        X = np.array(X)
+        y = np.array(y)
+        
+        # Train the model
+        self.performance_predictor.fit(
+            X, y,
+            epochs=10,
+            batch_size=32,
+            validation_split=0.2,
+            verbose=1
+        )
 
-    def recommend_next_topic(self, knowledge_level, topic_difficulty, prerequisites_met,
-                           past_performance, time_available):
-        features = np.array([[
-            knowledge_level, topic_difficulty, prerequisites_met,
-            past_performance, time_available
-        ]])
-        return bool(self.path_recommender.predict(features)[0])
+    #Update the model ( Not being used here )
+    def update_model(self, all_students):
+        X_all = []
+        y_all = []
+        
+        for student in all_students:
+            X_student, y_student = self.prepare_student_data(student)
+            X_all.extend(X_student)
+            y_all.extend(y_student)
+        
+        X_all = np.array(X_all)
+        y_all = np.array(y_all)
+        
+        # Retrain model with all accumulated data
+        self.performance_predictor.fit(
+            X_all, y_all,
+            epochs=10,
+            batch_size=32,
+            validation_split=0.2,
+            verbose=1
+        )
 
+    def _prepare_student_sequence(self, student):
+        sequence = np.zeros((10, 5))  # Pre-allocate fixed-size array
+        current_pos = 0
+        
+        for subject, data in student.subjects.items():
+            scores = data['scores'][-10:] if data['scores'] else []
+            if not scores:
+                continue
+                
+            times = [data['time_spent']/len(data['scores']) for _ in range(len(scores))]
+            knowledge = [student.knowledge_state.get(topic, 0) for topic in data['topics_completed']][-10:]
+            velocities = data['recent_velocity'][-10:] if data['recent_velocity'] else []
+            
+            max_velocity = max(velocities) if velocities and max(velocities) > 0 else 1
+            normalized_velocities = np.array(velocities) / max_velocity if velocities else []
+            
+            for i in range(min(len(scores), 10 - current_pos)):
+                sequence[current_pos + i] = [
+                    scores[i] / 100,
+                    times[i] / 3600,
+                    np.mean(knowledge) if knowledge else 0,
+                    normalized_velocities[i] if i < len(normalized_velocities) else 0,
+                    len(data['topics_completed']) / len(self.topics[subject])
+                ]
+            current_pos += min(len(scores), 10 - current_pos)
+            if current_pos >= 10:
+                break
+                
+        return np.array([sequence])
+
+
+    def predict_performance(self, student):
+        sequence = self._prepare_student_sequence(student)
+        prediction = self.performance_predictor.predict(sequence)
+        return float(prediction.item()) 
+
+    def _prepare_topic_features(self, student, topic_info):
+        features = []
+        for topic, info in topic_info.items():
+            knowledge_level = student.knowledge_state.get(topic, 0)
+            prerequisites_met = all(
+                student.knowledge_state.get(prereq, 0) >= 0.7 
+                for prereq in info['prerequisites']
+            )
+            
+            recent_scores = []
+            recent_times = []
+            for subject_data in student.subjects.values():
+                if subject_data['scores']:
+                    recent_scores.extend(subject_data['scores'][-5:])
+                    avg_time = subject_data['time_spent'] / len(subject_data['scores'])
+                    recent_times.append(avg_time)
+            
+            past_performance = np.mean(recent_scores)/100 if recent_scores else 0.5
+            avg_study_time = np.mean(recent_times)/3600 if recent_times else 0.5
+            
+            features.append([
+                knowledge_level,
+                info['difficulty'],
+                float(prerequisites_met),
+                past_performance,
+                avg_study_time
+            ])
+            
+        return np.array(features)
+    
+    def recommend_topics(self, student, topics):
+        recommendations = []
+        
+        # Process each subject and its topics
+        for subject, subject_topics in topics.items():
+            current_knowledge = {topic: student.knowledge_state.get(topic, 0) 
+                               for topic in subject_topics.keys()}
+            
+            for topic, topic_info in subject_topics.items():
+                # Skip already mastered topics (knowledge > 0.8)
+                if current_knowledge[topic] > 0.8:
+                    continue
+                    
+                # Check prerequisites
+                prereqs_met = True
+                prereq_knowledge = 0
+                if topic_info['prerequisites']:
+                    prereq_scores = [current_knowledge.get(prereq, 0) 
+                                   for prereq in topic_info['prerequisites']]
+                    prereq_knowledge = sum(prereq_scores) / len(prereq_scores)
+                    prereqs_met = prereq_knowledge >= 0.5
+                
+                # Calculate readiness score
+                base_readiness = 0.7 if prereqs_met else 0.3
+                knowledge_factor = current_knowledge.get(topic, 0)
+                prereq_factor = prereq_knowledge if topic_info['prerequisites'] else 1.0
+                
+                readiness = (base_readiness * 0.4 + 
+                           knowledge_factor * 0.3 + 
+                           prereq_factor * 0.3)
+                
+                # Add to recommendations with calculated readiness
+                recommendations.append({
+                    'topic': topic,
+                    'subject': subject,
+                    'readiness': round(readiness, 2),
+                    'difficulty': topic_info['difficulty'],
+                    'prerequisites': topic_info['prerequisites']
+                })
+        
+        # Sort by readiness and return top recommendations
+        sorted_recommendations = sorted(recommendations, 
+                                     key=lambda x: x['readiness'], 
+                                     reverse=True)
+        
+        # Return at least 3 recommendations if available
+        return sorted_recommendations[:5]
+
+    def set_topics(self, topics):
+       self.topics = topics
+
+    def evaluate_student_readiness(self, student, topic):
+      # Find subject containing the topic
+      subject_topic = None
+      for subject, topics in self.topics.items():
+        if topic in topics:
+            subject_topic = topics[topic]
+            break
+    
+        if not subject_topic:
+         return {'readiness_score': 0, 'prerequisites_met': False}
+
+        features = self._prepare_topic_features(student, {topic: subject_topic})
+        readiness_score = float(self.path_recommender.predict_proba(features)[0][1])
+    
+        return {
+         'readiness_score': readiness_score,
+         'prerequisites_met': all(
+            student.knowledge_state.get(prereq, 0) >= 0.7
+            for prereq in subject_topic['prerequisites']
+          )
+        }
+    
 class Student:
     def __init__(self, student_id, name, grade):
         self.student_id = student_id
@@ -130,7 +322,6 @@ class Student:
             'time_spent': 0,
             'topics_completed': set(),
             'mastery_level': defaultdict(float),
-            'score_timestamps': [],
             'recent_velocity': []
         })
         self.last_update_time = time.time()
@@ -146,9 +337,9 @@ class Student:
         ) * (1 - current_knowledge)
         
         self.knowledge_state[topic] = round(new_knowledge, 2)
-        self.update_learning_velocity(score, time_spent)
+        self._update_learning_velocity(score, time_spent)
 
-    def update_learning_velocity(self, score, time_spent):
+    def _update_learning_velocity(self, score, time_spent):
         current_time = time.time()
         time_diff = current_time - self.last_update_time
         
@@ -165,35 +356,173 @@ class Student:
         
         self.last_update_time = current_time
 
+class Analytics:
+    def __init__(self, learning_system):
+        self.learning_system = learning_system
+
+    def get_student_analytics(self, student_id):
+        student = self.learning_system.students.get(student_id)
+        if not student:
+            return None
+
+        return {
+            'performance_trends': self._calculate_performance_trends(student),
+            'learning_patterns': self._analyze_learning_patterns(student),
+            'topic_mastery': self._analyze_topic_mastery(student),
+            'time_analytics': self._analyze_time_patterns(student),
+            'comparison_metrics': self._get_peer_comparison(student)
+        }
+
+    def _calculate_performance_trends(self, student):
+        trends = {}
+        for subject, data in student.subjects.items():
+            scores = data['scores']
+            if len(scores) >= 3:
+                trends[subject] = {
+                    'trend': np.polyfit(range(len(scores)), scores, 1)[0],
+                    'recent_avg': np.mean(scores[-3:]),
+                    'overall_avg': np.mean(scores),
+                    'improvement_rate': (np.mean(scores[-3:]) - np.mean(scores[:3])) 
+                                      / np.mean(scores[:3]) if len(scores) >= 6 else 0
+                }
+        return trends
+
+    def _analyze_learning_patterns(self, student):
+        patterns = {}
+        for subject, data in student.subjects.items():
+            if data['scores'] and data['time_spent']:
+                patterns[subject] = {
+                    'efficiency': np.mean(data['scores']) / (data['time_spent'] / 3600),
+                    'consistency': np.std(data['scores']),
+                    'engagement': len(data['topics_completed']) / len(self.learning_system.topics[subject])
+                }
+        return patterns
+
+    def _analyze_topic_mastery(self, student):
+        mastery = {}
+        for subject, topics in self.learning_system.topics.items():
+            for topic_name, topic_info in topics.items():
+                knowledge = student.knowledge_state.get(topic_name, 0)
+                prereq_knowledge = np.mean([
+                   student.knowledge_state.get(prereq, 0)
+                   for prereq in topic_info['prerequisites']
+                ]) if topic_info['prerequisites'] else 1.0
+
+                try:
+                   readiness = self.learning_system.ai_model.evaluate_student_readiness(student, topic_name)
+                   readiness_score = readiness['readiness_score'] if readiness else 0
+                except:
+                   readiness_score = 0
+
+                mastery[topic_name] = {
+                    'knowledge_level': knowledge,
+                    'prerequisite_mastery': prereq_knowledge,
+                    'readiness': readiness_score
+                }
+        return mastery
+
+    def _analyze_time_patterns(self, student):
+        time_analysis = {}
+        for subject, data in student.subjects.items():
+            if data['scores'] and data['time_spent']:
+                time_per_topic = data['time_spent'] / len(data['topics_completed']) \
+                                if data['topics_completed'] else 0
+                time_analysis[subject] = {
+                    'avg_time_per_topic': time_per_topic,
+                    'total_time': data['time_spent'],
+                    'efficiency_score': np.mean(data['scores']) / max(time_per_topic, 1)
+                }
+        return time_analysis
+
+    def _get_peer_comparison(self, student):
+        peer_metrics = defaultdict(list)
+        for peer_id, peer in self.learning_system.students.items():
+            if peer_id != student.student_id and peer.grade == student.grade:
+                for subject, data in peer.subjects.items():
+                    if data['scores']:
+                        peer_metrics[subject].append({
+                            'avg_score': np.mean(data['scores']),
+                            'topics_completed': len(data['topics_completed']),
+                            'time_spent': data['time_spent']
+                        })
+
+        comparison = {}
+        for subject, metrics in peer_metrics.items():
+            if metrics:
+                peer_avg_score = np.mean([m['avg_score'] for m in metrics])
+                peer_avg_topics = np.mean([m['topics_completed'] for m in metrics])
+                peer_avg_time = np.mean([m['time_spent'] for m in metrics])
+
+                student_data = student.subjects[subject]
+                student_avg_score = np.mean(student_data['scores']) if student_data['scores'] else 0
+
+                comparison[subject] = {
+                    'score_percentile': percentileofscore(
+                        [m['avg_score'] for m in metrics],
+                        student_avg_score
+                    ),
+                    'progress_percentile': percentileofscore(
+                        [m['topics_completed'] for m in metrics],
+                        len(student_data['topics_completed'])
+                    ),
+                    'efficiency_percentile': percentileofscore(
+                        [m['time_spent'] / m['topics_completed'] for m in metrics if m['topics_completed']],
+                        student_data['time_spent'] / len(student_data['topics_completed'])
+                        if student_data['topics_completed'] else 0
+                    )
+                }
+        return comparison
+
 class AdaptiveLearningSystem:
     def __init__(self):
+        self._initialize_topics()  # Call this first
         self.ai_model = AIModel()
+        self.ai_model.set_topics(self.topics)
         self.students = {}
-        self.topics = self._initialize_topics()
         self._initialize_sample_data()
         
+        
     def _initialize_topics(self):
-        return {
+        self.topics = {
             'math': {
-                'algebra': {'difficulty': 0.7, 'prerequisites': ['basic_math']},
-                'geometry': {'difficulty': 0.6, 'prerequisites': ['algebra']},
-                'calculus': {'difficulty': 0.9, 'prerequisites': ['algebra', 'geometry']},
-                'statistics': {'difficulty': 0.8, 'prerequisites': ['algebra']}
+                'algebra': {
+                    'difficulty': 0.7,
+                    'prerequisites': ['basic_math']
+                },
+                'geometry': {
+                    'difficulty': 0.6,
+                    'prerequisites': ['algebra']
+                },
+                'calculus': {
+                    'difficulty': 0.9,
+                    'prerequisites': ['algebra', 'geometry']
+                }
             },
             'science': {
-                'physics': {'difficulty': 0.8, 'prerequisites': ['algebra']},
-                'chemistry': {'difficulty': 0.7, 'prerequisites': ['algebra']},
-                'biology': {'difficulty': 0.6, 'prerequisites': []},
-                'astronomy': {'difficulty': 0.7, 'prerequisites': ['physics']}
+                'physics': {
+                    'difficulty': 0.8,
+                    'prerequisites': ['algebra']
+                },
+                'chemistry': {
+                    'difficulty': 0.7,
+                    'prerequisites': ['algebra']
+                },
+                'biology': {
+                    'difficulty': 0.6,
+                    'prerequisites': []
+                }
             }
         }
 
     def _initialize_sample_data(self):
-        for student_id, name, grade in [
+        sample_students = [
             ('S001', 'John Doe', 10),
             ('S002', 'Jane Smith', 10),
             ('S003', 'Mike Johnson', 11)
-        ]:
+        ]
+        
+        for student_id, name, grade in sample_students:
+
             self.students[student_id] = Student(student_id, name, grade)
             self._initialize_student_data(self.students[student_id])
 
@@ -210,53 +539,9 @@ class AdaptiveLearningSystem:
 
     def calculate_learning_velocity(self, student):
         if not student.performance_history:
-            return 0
+          return 0
         recent_velocities = [ph['velocity'] for ph in student.performance_history[-5:]]
         return round(np.mean(recent_velocities), 2)
-
-    def predict_performance(self, student_id):
-        student = self.students[student_id]
-        student_data = {
-            'subjects': student.subjects
-        }
-        return self.ai_model.predict_performance(student_data)
-
-    def recommend_topics(self, student_id):
-        student = self.students[student_id]
-        available_topics = []
-        
-        for subject, topics in self.topics.items():
-            for topic, info in topics.items():
-                if topic not in student.learning_path:
-                    prerequisites_met = all(
-                        student.knowledge_state[prereq] >= 0.7 
-                        for prereq in info['prerequisites']
-                    )
-                    
-                    if prerequisites_met:
-                        knowledge_level = student.knowledge_state.get(topic, 0)
-                        past_performance = np.mean([
-                            score/100 for subj in student.subjects.values() 
-                            for score in subj['scores']
-                        ]) if any(subj['scores'] for subj in student.subjects.values()) else 0.5
-                        
-                        recommended = self.ai_model.recommend_next_topic(
-                            knowledge_level,
-                            info['difficulty'],
-                            float(prerequisites_met),
-                            past_performance,
-                            0.8  # default time_available
-                        )
-                        
-                        if recommended:
-                            available_topics.append({
-                                'topic': topic,
-                                'subject': subject,
-                                'difficulty': info['difficulty'],
-                                'readiness': 1 - info['difficulty'] + knowledge_level
-                            })
-        
-        return sorted(available_topics, key=lambda x: x['readiness'], reverse=True)[:3]
 
     def update_student_progress(self, student_id, subject, topic, score, time_spent):
         if student_id not in self.students:
@@ -271,12 +556,20 @@ class AdaptiveLearningSystem:
         
         student.update_knowledge(topic, score, time_spent)
         
+        velocity = score / (time_spent / 3600)
+        student.subjects[subject]['recent_velocity'].append(velocity)
+        if len(student.subjects[subject]['recent_velocity']) > 10:
+            student.subjects[subject]['recent_velocity'] = student.subjects[subject]['recent_velocity'][-10:]
+        
         return self.get_student_data(student_id)
+
 
     def get_student_data(self, student_id):
         student = self.students.get(student_id)
         if not student:
             return None
+            
+        recommended_topics = self.ai_model.recommend_topics(student, self.topics)
         
         return {
             'student_info': {
@@ -286,9 +579,9 @@ class AdaptiveLearningSystem:
             },
             'progress': {
                 'knowledge_state': dict(student.knowledge_state),
-                'performance_prediction': self.predict_performance(student_id),
-                'recommended_topics': self.recommend_topics(student_id),
-                'learning_velocity': self.calculate_learning_velocity(student),
+                'performance_prediction': self.ai_model.predict_performance(student),
+                'recommended_topics': recommended_topics,
+                'learning_velocity': self._calculate_learning_velocity(student),
                 'subjects': {
                     subject: {
                         'average_score': round(np.mean(data['scores']) if data['scores'] else 0, 2),
@@ -300,6 +593,117 @@ class AdaptiveLearningSystem:
                 }
             }
         }
+
+
+    def _calculate_learning_velocity(self, student):
+        if not student.performance_history:
+            return 0
+        recent_velocities = [ph['velocity'] for ph in student.performance_history[-5:]]
+        return round(np.mean(recent_velocities), 2)
+
+class PerformanceMonitor:
+    def __init__(self, learning_system):
+        self.learning_system = learning_system
+        self.thresholds = {
+            'low_performance': 60,
+            'high_performance': 85,
+            'time_warning': 7200,
+            'velocity_warning': 10
+        }
+
+    def check_student_status(self, student_id):
+        student = self.learning_system.students.get(student_id)
+        if not student:
+            return None
+
+        alerts = []
+        recommendations = []
+
+        for subject, data in student.subjects.items():
+            recent_scores = data['scores'][-3:] if data['scores'] else []
+            if recent_scores and np.mean(recent_scores) < self.thresholds['low_performance']:
+                alerts.append({
+                    'type': 'low_performance',
+                    'subject': subject,
+                    'message': f"Performance below threshold in {subject}"
+                })
+                recommendations.append(self._generate_improvement_plan(student, subject))
+
+        for subject, data in student.subjects.items():
+            if data['time_spent'] > self.thresholds['time_warning']:
+                alerts.append({
+                    'type': 'time_warning',
+                    'subject': subject,
+                    'message': f"Extended time spent on {subject}"
+                })
+
+        velocity = self.learning_system.calculate_learning_velocity(student)
+        if velocity < self.thresholds['velocity_warning']:
+            alerts.append({
+                'type': 'velocity_warning',
+                'message': "Learning velocity below expected rate"
+            })
+
+        return {
+            'alerts': alerts,
+            'recommendations': recommendations,
+            'status_summary': self._generate_status_summary(student)
+        }
+
+    def _generate_improvement_plan(self, student, subject):
+        weak_topics = [
+            topic for topic in self.learning_system.topics[subject]
+            if student.knowledge_state.get(topic, 0) < 0.6
+        ]
+
+        return {
+            'subject': subject,
+            'weak_topics': weak_topics,
+            'suggested_actions': [
+                {
+                    'action': 'review_prerequisites',
+                    'topics': self.learning_system.topics[subject][topic]['prerequisites']
+                }
+                for topic in weak_topics
+            ],
+            'estimated_improvement_time': len(weak_topics) * 3600
+        }
+
+    def _generate_status_summary(self, student):
+        return {
+            'overall_progress': np.mean([
+                len(data['topics_completed']) / len(self.learning_system.topics[subject])
+                for subject, data in student.subjects.items()
+            ]),
+            'average_performance': np.mean([
+                np.mean(data['scores']) if data['scores'] else 0
+                for data in student.subjects.values()
+            ]),
+            'learning_efficiency': np.mean([
+                np.mean(data['scores']) / (data['time_spent'] / 3600)
+                if data['scores'] and data['time_spent'] else 0
+                for data in student.subjects.values()
+            ])
+        }
+
+class DataProcessor:
+    @staticmethod
+    def process_student_submission(raw_data):
+        try:
+            processed_data = {
+                'student_id': str(raw_data['student_id']),
+                'subject': str(raw_data['subject']).lower(),
+                'topic': str(raw_data['topic']).lower(),
+                'score': float(raw_data['score']),
+                'time_spent': int(raw_data['time_spent'])
+            }
+
+            assert 0 <= processed_data['score'] <= 100, "Score must be between 0 and 100"
+            assert processed_data['time_spent'] > 0, "Time spent must be positive"
+
+            return processed_data
+        except (KeyError, ValueError, AssertionError) as e:
+            raise ValueError(f"Invalid submission data: {str(e)}")
 
 learning_system = AdaptiveLearningSystem()
 
@@ -314,9 +718,29 @@ def get_student(student_id):
         return jsonify({'error': 'Student not found'}), 404
     return jsonify(data)
 
+@app.route('/api/analytics/<student_id>')
+def get_analytics(student_id):
+    analytics = Analytics(learning_system)
+    data = analytics.get_student_analytics(student_id)
+    if not data:
+        return jsonify({'error': 'Student not found'}), 404
+    return jsonify(data)
+
+@app.route('/api/status/<student_id>')
+def get_status(student_id):
+    monitor = PerformanceMonitor(learning_system)
+    status = monitor.check_student_status(student_id)
+    if not status:
+        return jsonify({'error': 'Student not found'}), 404
+    return jsonify(status)
+
 @app.route('/api/update_progress', methods=['POST'])
 def update_progress():
-    data = request.json
+    try:
+        data = DataProcessor.process_student_submission(request.json)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
     updated_data = learning_system.update_student_progress(
         data['student_id'],
         data['subject'],
@@ -324,9 +748,17 @@ def update_progress():
         data['score'],
         data['time_spent']
     )
+    
     if not updated_data:
         return jsonify({'error': 'Student not found'}), 404
-    return jsonify(updated_data)
+    
+    monitor = PerformanceMonitor(learning_system)
+    status = monitor.check_student_status(data['student_id'])
+    
+    return jsonify({
+        'student_data': updated_data,
+        'status': status
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)
